@@ -51,6 +51,8 @@ toml = { workspace = true, default-features = false, features = [ "parse" ] }
 tracing-chrome.workspace = true
 tracing-subscriber = { workspace = true, default-features = false, features = [ "env-filter", "json" ] }
 tracing.workspace = true
+xdb = { path="../xdb" }
+rust-embed = "8.4.0"
 
 [dev-dependencies]
 insta = { workspace = true, features = ["serde"] }

@@ -643,7 +643,7 @@ impl TrippyConfig {
         validate_tui_refresh_rate(tui_refresh_rate)?;
         validate_report_cycles(report_cycles)?;
         validate_dns(dns_resolve_method, dns_lookup_as_info)?;
-        validate_geoip(tui_geoip_mode, &geoip_mmdb_file)?;
+        //validate_geoip(tui_geoip_mode, &geoip_mmdb_file)?;
         validate_tui_custom_columns(&tui_custom_columns)?;
         let tui_theme_items = args
             .tui_theme_colors
@@ -1076,6 +1076,7 @@ fn validate_dns(dns_resolve_method: ResolveMethod, dns_lookup_as_info: bool) -> 
     }
 }
 
+#[allow(dead_code)]
 fn validate_geoip(
     tui_geoip_mode: GeoIpMode,
     geoip_mmdb_file: &Option<String>,
