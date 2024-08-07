@@ -3,6 +3,11 @@ use std::{error::Error, fmt::Display, fs::File, io::Read, path::Path};
 use once_cell::sync::OnceCell;
 
 use crate::ToUIntIP;
+use rust_embed::RustEmbed;
+
+#[derive(RustEmbed)]
+#[folder = "static"]
+struct Assets;
 
 const HEADER_INFO_LENGTH: usize = 256;
 const VECTOR_INDEX_COLS: usize = 256;
@@ -78,8 +83,13 @@ pub fn searcher_init(xdb_filepath: Option<String>) {
 	CACHE.get_or_init(load_file);
 }
 
-pub fn searcher_load(xdb_content: Vec<u8>) {
-	CACHE.get_or_init(|| xdb_content);
+pub fn searcher_load() -> bool {
+	if let Some(file) = Assets::get("ip2region.xdb") {
+		let xdb_content = file.data.to_vec() as Vec<u8>;
+		CACHE.get_or_init(|| xdb_content);
+		return true
+	}
+	false
 }
 
 pub fn get_vector_index_cache() -> &'static [u8] {

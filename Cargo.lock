@@ -2602,7 +2602,6 @@ dependencies = [
  "petgraph",
  "pretty_assertions",
  "ratatui",
- "rust-embed",
  "serde",
  "serde_json",
  "serde_with",
@@ -3063,6 +3062,7 @@ dependencies = [
  "criterion",
  "once_cell",
  "rand",
+ "rust-embed",
  "tracing",
  "tracing-subscriber",
 ]

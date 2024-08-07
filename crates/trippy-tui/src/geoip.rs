@@ -3,24 +3,19 @@ use std::{cell::RefCell, collections::HashMap, net::IpAddr, path::Path, rc::Rc, 
 use anyhow::Context;
 use itertools::Itertools;
 use maxminddb::Reader;
-use rust_embed::RustEmbed;
 use xdb::{search_by_ip, searcher_init, searcher_load};
-
-#[derive(RustEmbed)]
-#[folder = "static"]
-struct Assets;
 
 #[derive(Debug, Clone, Default)]
 pub struct GeoIpCity {
-	latitude: Option<f64>,
-	longitude: Option<f64>,
-	accuracy_radius: Option<u16>,
-	city: Option<String>,
-	subdivision: Option<String>,
-	subdivision_code: Option<String>,
-	country: Option<String>,
-	country_code: Option<String>,
-	continent: Option<String>,
+	pub latitude: Option<f64>,
+	pub longitude: Option<f64>,
+	pub accuracy_radius: Option<u16>,
+	pub city: Option<String>,
+	pub subdivision: Option<String>,
+	pub subdivision_code: Option<String>,
+	pub country: Option<String>,
+	pub country_code: Option<String>,
+	pub continent: Option<String>,
 }
 
 impl GeoIpCity {
@@ -314,8 +309,7 @@ impl GeoIpLookup {
 
 	/// Create a `GeoIpLookup` that returns `None` for all `IpAddr` lookups.
 	pub fn empty() -> Self {
-		if let Some(file) = Assets::get("ip2region.xdb") {
-			searcher_load(file.data.to_vec() as Vec<u8>);
+		if searcher_load() {
 			Self {
 				reader: None,
 				cache: RefCell::new(HashMap::new()),
