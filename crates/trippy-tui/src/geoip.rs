@@ -27,10 +27,24 @@ impl GeoIpCity {
 		]
 		.into_iter()
 		.flatten()
-		.join(", ")
+		.join("")
+		.replacen("0", "", 3)
 	}
 
 	pub fn long_name(&self) -> String {
+		if let Some(ref s) = self.subdivision {
+			if s.eq("北京") || s.eq("上海") || s.eq("天津") || s.eq("重庆") {
+				return [
+					self.city.as_ref(),
+					self.country.as_ref(),
+					self.continent.as_ref()
+				]
+				.into_iter()
+				.flatten()
+				.join("")
+				.replacen("0", "", 3);
+			}
+		}
 		[
 			self.city.as_ref(),
 			self.subdivision.as_ref(),
@@ -39,7 +53,8 @@ impl GeoIpCity {
 		]
 		.into_iter()
 		.flatten()
-		.join(", ")
+		.join("")
+		.replacen("0", "", 3)
 	}
 
 	pub fn location(&self) -> String {
