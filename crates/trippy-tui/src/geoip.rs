@@ -7,7 +7,9 @@ use std::net::IpAddr;
 use std::path::Path;
 use std::rc::Rc;
 use std::str::FromStr;
-use xdb::{search_by_ip, searcher_init, searcher_load};
+use std::sync::Arc;
+// use xdb::{search_by_ip, searcher_init, searcher_load};
+use ip2region::{CachePolicy, Searcher};
 
 #[derive(Debug, Clone, Default)]
 pub struct GeoIpCity {
@@ -20,6 +22,7 @@ pub struct GeoIpCity {
     country: Option<String>,
     country_code: Option<String>,
     continent: Option<String>,
+    raw: Option<String>,
 }
 
 impl GeoIpCity {
@@ -60,6 +63,10 @@ impl GeoIpCity {
             (Some(lat), Some(long), Some(radius)) => Some((lat, long, radius)),
             _ => None,
         }
+    }
+
+    pub fn raw(&self) -> Option<&str> {
+        self.raw.as_deref()
     }
 }
 
@@ -426,6 +433,8 @@ mod ipinfo {
                 cache: Cache::default(),
                 locale: String::from("en"),
                 xdb: false,
+                v4_searcher: None,
+                v6_searcher: None,
             }
         }
 
@@ -556,6 +565,7 @@ impl From<ipinfo::IpInfoGeoIpLegacy> for GeoIpCity {
             country: value.country_name,
             country_code: value.country,
             continent: value.continent_name,
+            raw: None,
         }
     }
 }
@@ -572,6 +582,7 @@ impl From<ipinfo::IpInfoGeoIp> for GeoIpCity {
             country: value.country,
             country_code: value.country_code,
             continent: value.continent,
+            raw: None,
         }
     }
 }
@@ -603,6 +614,7 @@ impl From<(maxminddb::geoip2::City<'_>, &str)> for GeoIpCity {
             country,
             country_code,
             continent,
+            raw: None,
         }
     }
 }
@@ -625,54 +637,53 @@ const FALLBACK_LOCALE: &str = "en";
 type Cache = RefCell<HashMap<IpAddr, Option<Rc<GeoIpCity>>>>;
 
 /// Lookup `GeoIpCity` data form an `IpAddr`.
-#[derive(Debug)]
 pub struct GeoIpLookup {
     reader: Option<Reader<Vec<u8>>>,
     cache: Cache,
     locale: String,
     xdb: bool,
+    v4_searcher: Option<Arc<Searcher>>,
+    v6_searcher: Option<Arc<Searcher>>,
 }
 
 impl GeoIpLookup {
+    /// Create a new `GeoIpLookup` from `xdb` DB bytes.
+    pub fn load_xdb(v4: Vec<u8>, v6: Vec<u8>, locale: String) -> anyhow::Result<Self> {
+        let ipv4_searcher = Arc::new(Searcher::from_bytes(v4, CachePolicy::VectorIndex)?);
+        let ipv6_searcher = Arc::new(Searcher::from_bytes(v6, CachePolicy::VectorIndex)?);
+        Ok(Self {
+            reader: None,
+            cache: RefCell::new(HashMap::new()),
+            locale,
+            xdb: true,
+            v4_searcher: Some(ipv4_searcher),
+            v6_searcher: Some(ipv6_searcher),
+        })
+    }
+
     /// Create a new `GeoIpLookup` from a `MaxMind` DB file.
     pub fn from_file<P: AsRef<Path>>(path: P, locale: String) -> anyhow::Result<Self> {
-        if path.as_ref().extension().unwrap() == "xdb" {
-            let path_str = String::from(path.as_ref().to_str().unwrap());
-            searcher_init(Some(path_str));
-            Ok(Self {
-                reader: None,
-                cache: RefCell::new(HashMap::new()),
-                locale,
-                xdb: true,
-            })
-        } else {
-            let reader = Reader::open_readfile(path.as_ref())
-                .context(format!("{}", path.as_ref().display()))?;
-            Ok(Self {
-                reader: Some(reader),
-                cache: RefCell::new(HashMap::new()),
-                locale,
-                xdb: false,
-            })
-        }
+        let reader =
+            Reader::open_readfile(path.as_ref()).context(format!("{}", path.as_ref().display()))?;
+        Ok(Self {
+            reader: Some(reader),
+            cache: RefCell::new(HashMap::new()),
+            locale,
+            xdb: false,
+            v4_searcher: None,
+            v6_searcher: None,
+        })
     }
 
     /// Create a `GeoIpLookup` that returns `None` for all `IpAddr` lookups.
     pub fn empty() -> Self {
-        if searcher_load() {
-            Self {
-                reader: None,
-                cache: RefCell::new(HashMap::new()),
-                locale: FALLBACK_LOCALE.to_string(),
-                xdb: true,
-            }
-        } else {
-            Self {
-                reader: None,
-                cache: RefCell::new(HashMap::new()),
-                locale: FALLBACK_LOCALE.to_string(),
-                xdb: false,
-            }
+        Self {
+            reader: None,
+            cache: RefCell::new(HashMap::new()),
+            locale: FALLBACK_LOCALE.to_string(),
+            xdb: false,
+            v4_searcher: None,
+            v6_searcher: None,
         }
     }
 
@@ -680,10 +691,58 @@ impl GeoIpLookup {
     ///
     /// If an entry is found it is cached and returned, otherwise None is returned.
     pub fn lookup(&self, addr: IpAddr) -> anyhow::Result<Option<Rc<GeoIpCity>>> {
-        if let Some(reader) = &self.reader {
-            if let Some(geo) = self.cache.borrow().get(&addr) {
-                return Ok(geo.clone());
+        if let Some(geo) = self.cache.borrow().get(&addr) {
+            return Ok(geo.clone());
+        }
+        if self.xdb {
+            if addr.is_ipv4() {
+                if let IpAddr::V4(ip) = addr {
+                    if let Some(ipv4_searcher) = &self.v4_searcher {
+                        if let Ok(ips) = ipv4_searcher.search(ip) {
+                            let parts = ips.split('|').collect::<Vec<&str>>();
+                            let city_data = Some(GeoIpCity {
+                                latitude: Some(0.0),
+                                longitude: Some(0.0),
+                                accuracy_radius: Some(0),
+                                city: Some(parts[0].to_string()),
+                                subdivision: Some(parts[2].to_string()),
+                                subdivision_code: Some(parts[2].to_string()),
+                                country: Some(parts[3].to_string()),
+                                country_code: Some(parts[3].to_string()),
+                                continent: Some(parts[4].to_string()),
+                                raw: Some(ips.clone()),
+                            });
+                            let cached = city_data.map(Rc::new);
+                            self.cache.borrow_mut().insert(addr, cached.clone());
+                            return Ok(cached);
+                        }
+                    }
+                }
+            } else {
+                if let IpAddr::V6(ip) = addr {
+                    if let Some(ipv6_searcher) = &self.v6_searcher {
+                        if let Ok(ips) = ipv6_searcher.search(ip) {
+                            let parts = ips.split('|').collect::<Vec<&str>>();
+                            let city_data = Some(GeoIpCity {
+                                latitude: Some(0.0),
+                                longitude: Some(0.0),
+                                accuracy_radius: Some(0),
+                                city: Some(parts[0].to_string()),
+                                subdivision: Some(parts[2].to_string()),
+                                subdivision_code: Some(parts[2].to_string()),
+                                country: Some(parts[3].to_string()),
+                                country_code: Some(parts[3].to_string()),
+                                continent: Some(parts[4].to_string()),
+                                raw: Some(ips.clone()),
+                            });
+                            let cached = city_data.map(Rc::new);
+                            self.cache.borrow_mut().insert(addr, cached.clone());
+                            return Ok(cached);
+                        }
+                    }
+                }
             }
+        } else if let Some(reader) = &self.reader {
             let lookup_result = reader.lookup(addr)?;
             let city_data =
                 match ipinfo::DatabaseFormat::try_from(reader.metadata.database_type.as_ref()).ok()
@@ -700,34 +759,9 @@ impl GeoIpLookup {
                 };
             let cached = city_data.map(Rc::new);
             self.cache.borrow_mut().insert(addr, cached.clone());
-            Ok(cached)
-        } else if self.xdb && addr.is_ipv4() {
-            if let IpAddr::V4(ip) = addr {
-                if let Ok(ips) = search_by_ip(ip) {
-                    let ips = ips.split('|').collect::<Vec<&str>>();
-                    let city_data = Some(GeoIpCity {
-                        latitude: Some(0.0),
-                        longitude: Some(0.0),
-                        accuracy_radius: Some(0),
-                        city: Some(ips[0].to_string()),
-                        subdivision: Some(ips[2].to_string()),
-                        subdivision_code: Some(ips[2].to_string()),
-                        country: Some(ips[3].to_string()),
-                        country_code: Some(ips[3].to_string()),
-                        continent: Some(ips[4].to_string()),
-                    });
-                    let cached = city_data.map(Rc::new);
-                    self.cache.borrow_mut().insert(addr, cached.clone());
-                    Ok(cached)
-                } else {
-                    Ok(None)
-                }
-            } else {
-                Ok(None)
-            }
-        } else {
-            Ok(None)
+            return Ok(cached);
         }
+        Ok(None)
     }
 }
 

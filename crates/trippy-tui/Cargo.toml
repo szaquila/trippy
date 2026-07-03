@@ -45,7 +45,9 @@ tracing.workspace = true
 unic-langid.workspace = true
 unicode-width.workspace = true
 clap-cargo.workspace = true
-xdb = { path="../xdb" }
+# xdb = { path="../xdb" }
+ip2region = { path = "../ip2region" }
+rust-embed = "8.11.0"
 
 [dev-dependencies]
 insta = { workspace = true, features = ["serde"] }

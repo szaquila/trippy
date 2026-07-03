@@ -14,6 +14,12 @@ use trippy_core::{Builder, Tracer};
 use trippy_dns::{DnsResolver, Resolver};
 use trippy_privilege::Privilege;
 
+use rust_embed::RustEmbed;
+
+#[derive(RustEmbed)]
+#[folder = "../../assets/xdb"]
+struct Assets;
+
 /// Run the trippy application.
 pub fn run_trippy(cfg: &TrippyConfig, pid: u16) -> anyhow::Result<()> {
     let locale = locale::set_locale(cfg.tui_locale.as_deref());
@@ -107,8 +113,12 @@ fn run_frontend(
         Mode::Stream => report::stream::report(&traces[0], &resolver)?,
         Mode::Csv => report::csv::report(&traces[0], args.report_cycles, &resolver)?,
         Mode::Json => report::json::report(&traces[0], args.report_cycles, &resolver)?,
-        Mode::Pretty => report::table::report_pretty(&traces[0], args.report_cycles, &resolver)?,
-        Mode::Markdown => report::table::report_md(&traces[0], args.report_cycles, &resolver)?,
+        Mode::Pretty => {
+            report::table::report_pretty(&traces[0], args.report_cycles, &resolver, &geoip_lookup)?
+        }
+        Mode::Markdown => {
+            report::table::report_md(&traces[0], args.report_cycles, &resolver, &geoip_lookup)?
+        }
         Mode::Dot => report::dot::report(&traces[0], args.report_cycles)?,
         Mode::Flows => report::flows::report(&traces[0], args.report_cycles)?,
         Mode::Silent => report::silent::report(&traces[0], args.report_cycles)?,
@@ -154,7 +164,13 @@ fn start_dns_resolver(cfg: &TrippyConfig) -> anyhow::Result<DnsResolver> {
 
 #[instrument(skip_all, level = "trace")]
 fn create_geoip_lookup(cfg: &TrippyConfig, locale: &str) -> anyhow::Result<GeoIpLookup> {
-    if let Some(path) = cfg.geoip_mmdb_file.as_ref() {
+	if let Some(v4_asset) = Assets::get("ip2region_v4.xdb") {
+		if let Some(v6_asset) = Assets::get("ip2region_v6.xdb") {
+			GeoIpLookup::load_xdb(v4_asset.data.into(), v6_asset.data.into(), String::from(locale))
+		} else {
+			Ok(GeoIpLookup::empty())
+		}
+    } else if let Some(path) = cfg.geoip_mmdb_file.as_ref() {
         GeoIpLookup::from_file(path, String::from(locale))
     } else {
         Ok(GeoIpLookup::empty())

@@ -1,10 +1,10 @@
 use crate::app::TraceInfo;
+use crate::geoip::GeoIpLookup;
 use comfy_table::presets::{ASCII_MARKDOWN, UTF8_FULL};
 use comfy_table::{ContentArrangement, Table};
 use itertools::Itertools;
 use tracing::instrument;
 use trippy_dns::Resolver;
-use xdb::{search_by_ip, searcher_load};
 
 /// Generate a Markdown table report of trace data.
 #[instrument(skip_all, level = "trace")]
@@ -12,8 +12,9 @@ pub fn report_md<R: Resolver>(
     info: &TraceInfo,
     report_cycles: usize,
     resolver: &R,
+    geoip_lookup: &GeoIpLookup,
 ) -> anyhow::Result<()> {
-    run_report_table(info, report_cycles, resolver, ASCII_MARKDOWN)
+    run_report_table(info, report_cycles, resolver, ASCII_MARKDOWN, geoip_lookup)
 }
 
 /// Generate a pretty table report of trace data.
@@ -22,8 +23,9 @@ pub fn report_pretty<R: Resolver>(
     info: &TraceInfo,
     report_cycles: usize,
     resolver: &R,
+    geoip_lookup: &GeoIpLookup,
 ) -> anyhow::Result<()> {
-    run_report_table(info, report_cycles, resolver, UTF8_FULL)
+    run_report_table(info, report_cycles, resolver, UTF8_FULL, geoip_lookup)
 }
 
 fn run_report_table<R: Resolver>(
@@ -31,6 +33,7 @@ fn run_report_table<R: Resolver>(
     report_cycles: usize,
     resolver: &R,
     preset: &str,
+    geoip_lookup: &GeoIpLookup,
 ) -> anyhow::Result<()> {
     let trace = super::wait_for_round(&info.data, report_cycles)?;
     let columns = vec![
@@ -41,7 +44,6 @@ fn run_report_table<R: Resolver>(
         .load_preset(preset)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(columns);
-    searcher_load();
     for hop in trace.hops() {
         let ttl = hop.ttl().to_string();
         let ips = hop.addrs().join("\n");
@@ -53,8 +55,8 @@ fn run_report_table<R: Resolver>(
         let hosts = hop
             .addrs()
             .map(|ip| {
-                if let Ok(ips) = search_by_ip(*ip) {
-                    ips
+                if let Ok(Some(geo)) = geoip_lookup.lookup(*ip) {
+                    geo.raw().unwrap_or_default().to_string()
                 } else {
                     resolver.reverse_lookup(*ip).to_string()
                 }

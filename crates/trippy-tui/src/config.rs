@@ -658,7 +658,7 @@ impl TrippyConfig {
         validate_tui_refresh_rate(tui_refresh_rate)?;
         validate_report_cycles(report_cycles)?;
         validate_dns(dns_resolve_method, dns_lookup_as_info)?;
-        // validate_geoip(tui_geoip_mode, geoip_mmdb_file.as_ref())?;
+        validate_geoip(tui_geoip_mode, geoip_mmdb_file.as_ref())?;
         validate_tui_custom_columns(&tui_custom_columns)?;
         let tui_theme_items = args
             .tui_theme_colors
@@ -1111,9 +1111,10 @@ fn validate_geoip(
         GeoIpMode::Short | GeoIpMode::Long | GeoIpMode::Location
     ) && geoip_mmdb_file.is_none()
     {
-        Err(anyhow!(
-            "geoip-mmdb-file must be given for tui-geoip-mode of `{tui_geoip_mode:?}`"
-        ))
+        // Err(anyhow!(
+        //     "geoip-mmdb-file must be given for tui-geoip-mode of `{tui_geoip_mode:?}`"
+        // ))
+        Ok(())
     } else {
         Ok(())
     }
