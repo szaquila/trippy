@@ -4,6 +4,7 @@ use comfy_table::{ContentArrangement, Table};
 use itertools::Itertools;
 use tracing::instrument;
 use trippy_dns::Resolver;
+use xdb::{search_by_ip, searcher_load};
 
 /// Generate a Markdown table report of trace data.
 #[instrument(skip_all, level = "trace")]
@@ -40,6 +41,7 @@ fn run_report_table<R: Resolver>(
         .load_preset(preset)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header(columns);
+    searcher_load();
     for hop in trace.hops() {
         let ttl = hop.ttl().to_string();
         let ips = hop.addrs().join("\n");
@@ -50,7 +52,13 @@ fn run_report_table<R: Resolver>(
         };
         let hosts = hop
             .addrs()
-            .map(|ip| resolver.reverse_lookup(*ip).to_string())
+            .map(|ip| {
+                if let Ok(ips) = search_by_ip(*ip) {
+                    ips
+                } else {
+                    resolver.reverse_lookup(*ip).to_string()
+                }
+            })
             .join("\n");
         let host = if hosts.is_empty() {
             String::from("???")

@@ -32,7 +32,7 @@ pub const DEFAULT_CUSTOM_COLUMNS: &str = "holsravbwdt";
 pub const DEFAULT_TUI_ICMP_EXTENSION_MODE: IcmpExtensionMode = IcmpExtensionMode::Off;
 
 /// The default value for `tui-geoip-mode`.
-pub const DEFAULT_TUI_GEOIP_MODE: GeoIpMode = GeoIpMode::Off;
+pub const DEFAULT_TUI_GEOIP_MODE: GeoIpMode = GeoIpMode::Long;
 
 /// The default value for `tui-max-addrs`.
 pub const DEFAULT_TUI_MAX_ADDRS: u8 = 0;
