@@ -46,6 +46,7 @@ pub struct TuiBindings {
     pub clear_selection: TuiKeyBinding,
     pub toggle_as_info: TuiKeyBinding,
     pub toggle_hop_details: TuiKeyBinding,
+    pub toggle_route_select: TuiKeyBinding,
     pub quit: TuiKeyBinding,
     pub quit_preserve_screen: TuiKeyBinding,
 }
@@ -98,6 +99,7 @@ impl Default for TuiBindings {
             clear_selection: TuiKeyBinding::new(KeyCode::Esc),
             toggle_as_info: TuiKeyBinding::new(KeyCode::Char('z')),
             toggle_hop_details: TuiKeyBinding::new(KeyCode::Char('d')),
+            toggle_route_select: TuiKeyBinding::new(KeyCode::Enter),
             quit: TuiKeyBinding::new(KeyCode::Char('q')),
             quit_preserve_screen: TuiKeyBinding::new_with_modifier(
                 KeyCode::Char('q'),
@@ -155,6 +157,7 @@ impl TuiBindings {
             (self.clear_selection, TuiCommandItem::ClearSelection),
             (self.toggle_as_info, TuiCommandItem::ToggleASInfo),
             (self.toggle_hop_details, TuiCommandItem::ToggleHopDetails),
+            (self.toggle_route_select, TuiCommandItem::ToggleRouteSelect),
             (self.quit, TuiCommandItem::Quit),
             (
                 self.quit_preserve_screen,
@@ -331,6 +334,10 @@ impl From<(HashMap<TuiCommandItem, TuiKeyBinding>, ConfigBindings)> for TuiBindi
                 .get(&TuiCommandItem::ToggleHopDetails)
                 .or(cfg.toggle_hop_details.as_ref())
                 .unwrap_or(&Self::default().toggle_hop_details),
+            toggle_route_select: *cmd_items
+                .get(&TuiCommandItem::ToggleRouteSelect)
+                .or(cfg.toggle_route_select.as_ref())
+                .unwrap_or(&Self::default().toggle_route_select),
             quit: *cmd_items
                 .get(&TuiCommandItem::Quit)
                 .or(cfg.quit.as_ref())
@@ -638,6 +645,8 @@ pub enum TuiCommandItem {
     ToggleASInfo,
     /// Toggle hop details.
     ToggleHopDetails,
+    /// Toggle route selection popup.
+    ToggleRouteSelect,
     /// Quit the application.
     Quit,
     /// Quit the application and preserve the screen.

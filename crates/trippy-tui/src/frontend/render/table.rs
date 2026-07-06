@@ -54,20 +54,38 @@ pub fn render(f: &mut Frame<'_>, app: &mut TuiApp, rect: Rect) {
             .fg(config.theme.hops_table_row_active_selected_text)
             .bg(config.theme.hops_table_row_active_selected_bg),
     };
-    let rows = app
-        .tracer_data()
-        .hops_for_flow(app.selected_flow)
-        .iter()
-        .map(|hop| {
-            render_table_row(
-                app,
-                hop,
-                &app.resolver,
-                &app.geoip_lookup,
-                &app.tui_config,
-                &config.tui_columns,
-            )
-        });
+
+    let has_selection = !app.route_selections.is_empty();
+    let all_hops: Vec<&Hop> = app.tracer_data().hops_for_flow(app.selected_flow).iter().collect();
+    let mut hop_num: usize = 0;
+    let mut visible_hops: Vec<(&Hop, usize)> = Vec::new();
+
+    for &hop in &all_hops {
+        let ttl = hop.ttl();
+
+        if !has_selection {
+            hop_num += 1;
+            visible_hops.push((hop, hop_num));
+            continue;
+        }
+
+        if hop.total_recv() == 0 {
+            hop_num += 1;
+            visible_hops.push((hop, hop_num));
+            continue;
+        }
+
+        // 检查此跳是否有任何可见地址
+        let has_visible = (0..hop.addr_count()).any(|a| app.is_addr_visible(ttl, a));
+        if has_visible {
+            hop_num += 1;
+            visible_hops.push((hop, hop_num));
+        }
+    }
+
+    let rows = visible_hops.iter().map(|&(hop, _num)| {
+        render_table_row(app, hop, &app.resolver, &app.geoip_lookup, &app.tui_config, &config.tui_columns)
+    });
     let table = Table::new(rows, widths.as_slice())
         .header(header)
         .block(
@@ -108,6 +126,7 @@ fn render_table_row(
     custom_columns: &Columns,
 ) -> Row<'static> {
     let is_selected_hop = app.selected_hop().is_some_and(|h| h.ttl() == hop.ttl());
+    let has_route_sel = app.route_selections.contains_key(&hop.ttl());
     let is_in_round = app.tracer_data().is_in_round(hop, app.selected_flow);
     let (_, row_height) = if is_selected_hop && app.show_hop_details {
         render_hostname_with_details(app, hop, dns, geoip_lookup, config)
@@ -117,18 +136,12 @@ fn render_table_row(
     let cells: Vec<Cell<'_>> = custom_columns
         .columns()
         .map(|column| {
-            new_cell(
-                column.typ,
-                is_selected_hop,
-                app,
-                hop,
-                dns,
-                geoip_lookup,
-                config,
-            )
+            new_cell(column.typ, is_selected_hop, app, hop, dns, geoip_lookup, config)
         })
         .collect();
-    let row_color = if is_in_round {
+    let row_color = if has_route_sel {
+        ratatui::style::Color::White
+    } else if is_in_round {
         config.theme.hops_table_row_active_text
     } else {
         config.theme.hops_table_row_inactive_text
@@ -338,7 +351,18 @@ fn render_hostname(
         if app.tui_config.privacy_max_ttl >= Some(hop.ttl()) {
             (format!("**{}**", t!("hidden")), 1)
         } else {
-            let (addrs, count) = visible_addresses(hop, app.tui_config.max_addrs);
+            let (addrs, count) = if app.route_selections.is_empty() {
+                visible_addresses(hop, app.tui_config.max_addrs)
+            } else {
+                // 用 is_addr_visible 过滤隐藏的地址
+                let filtered: Vec<_> = hop.addrs_with_counts()
+                    .enumerate()
+                    .filter(|(i, _)| app.is_addr_visible(hop.ttl(), *i))
+                    .map(|(_, item)| item)
+                    .collect();
+                let n = filtered.len().max(1);
+                (filtered, n as u16)
+            };
             let hostnames = addrs
                 .into_iter()
                 .map(|(addr, &freq)| {

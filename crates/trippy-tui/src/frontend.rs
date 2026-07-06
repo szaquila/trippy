@@ -71,6 +71,7 @@ enum ExitAction {
 #[expect(clippy::too_many_lines)]
 fn run_app(terminal: &mut DefaultTerminal, app: &mut TuiApp) -> io::Result<ExitAction> {
     loop {
+        app.try_recv_verify_result();
         if app.frozen_start.is_none() {
             app.snapshot_trace_data();
             app.clamp_selected_hop();
@@ -149,6 +150,17 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut TuiApp) -> io::Result<ExitA
                 } else if bindings.previous_hop_address.check(key) {
                     app.move_column_up();
                 }
+            } else if app.show_route_select {
+                if bindings.toggle_route_select.check(key) {
+                    app.confirm_route_select();
+                } else if bindings.clear_selection.check(key) {
+                    app.clear_all_route_selections();
+                    app.show_route_select = false;
+                } else if bindings.previous_hop.check(key) {
+                    app.route_select_up();
+                } else if bindings.next_hop.check(key) {
+                    app.route_select_down();
+                }
             } else if bindings.toggle_help.check(key) || bindings.toggle_help_alt.check(key) {
                 app.toggle_help();
             } else if bindings.toggle_settings.check(key) {
@@ -167,6 +179,8 @@ fn run_app(terminal: &mut DefaultTerminal, app: &mut TuiApp) -> io::Result<ExitA
                 app.show_settings_columns(5);
             } else if bindings.toggle_settings_columns.check(key) {
                 app.show_settings_columns(6);
+            } else if bindings.toggle_route_select.check(key) {
+                app.toggle_route_select();
             } else if bindings.next_hop.check(key) {
                 app.next_hop();
             } else if bindings.previous_hop.check(key) {

@@ -9,6 +9,7 @@ pub mod header;
 pub mod help;
 pub mod histogram;
 pub mod history;
+pub mod route_select;
 pub mod settings;
 pub mod splash;
 pub mod table;

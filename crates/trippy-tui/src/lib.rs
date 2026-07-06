@@ -18,6 +18,7 @@ mod geoip;
 mod locale;
 mod print;
 mod report;
+pub mod route_verify;
 mod util;
 
 /// Run the Trippy application.

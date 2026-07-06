@@ -42,6 +42,7 @@ pub struct Bindings {
     pub clear_selection: KeyBinding,
     pub toggle_as_info: KeyBinding,
     pub toggle_hop_details: KeyBinding,
+    pub toggle_route_select: KeyBinding,
     pub quit: KeyBinding,
     pub quit_preserve_screen: KeyBinding,
 }
@@ -85,6 +86,7 @@ impl From<TuiBindings> for Bindings {
             clear_selection: KeyBinding::from(value.clear_selection),
             toggle_as_info: KeyBinding::from(value.toggle_as_info),
             toggle_hop_details: KeyBinding::from(value.toggle_hop_details),
+            toggle_route_select: KeyBinding::from(value.toggle_route_select),
             quit: KeyBinding::from(value.quit),
             quit_preserve_screen: KeyBinding::from(value.quit_preserve_screen),
         }

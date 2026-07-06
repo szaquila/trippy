@@ -38,6 +38,16 @@ pub struct TuiApp {
     pub geoip_lookup: GeoIpLookup,
     pub show_help: bool,
     pub show_settings: bool,
+    pub show_route_select: bool,
+    pub route_select_cursor: usize,
+    /// 每跳的路由选择：hop ttl -> addr_idx
+    pub route_selections: std::collections::HashMap<u8, usize>,
+    /// 隐藏的地址集合：(ttl, addr_idx) — 后台验证未通过的地址
+    pub hidden_addrs: std::collections::HashSet<(u8, usize)>,
+    /// 异步验证是否正在进行
+    pub verifying_routes: bool,
+    /// 接收后台验证结果的 channel
+    verify_result_rx: Option<std::sync::mpsc::Receiver<Vec<(u8, usize)>>>,
     pub show_hop_details: bool,
     pub show_flows: bool,
     pub show_chart: bool,
@@ -69,6 +79,12 @@ impl TuiApp {
             geoip_lookup,
             show_help: false,
             show_settings: false,
+            show_route_select: false,
+            route_select_cursor: 0,
+            route_selections: std::collections::HashMap::new(),
+            hidden_addrs: std::collections::HashSet::new(),
+            verifying_routes: false,
+            verify_result_rx: None,
             show_hop_details: false,
             show_flows: false,
             show_chart: false,
@@ -331,6 +347,134 @@ impl TuiApp {
 
     pub fn toggle_settings(&mut self) {
         self.show_settings = !self.show_settings;
+    }
+
+    pub fn toggle_route_select(&mut self) {
+        if self.show_route_select {
+            self.show_route_select = false;
+        } else {
+            self.route_select_cursor = 0;
+            self.show_route_select = true;
+        }
+    }
+
+    pub fn route_select_up(&mut self) {
+        if self.route_select_cursor > 0 {
+            self.route_select_cursor -= 1;
+        }
+    }
+
+    pub fn route_select_down(&mut self) {
+        if let Some(hop) = self.selected_hop() {
+            let max = hop.addr_count();
+            if max > 0 && self.route_select_cursor < max - 1 {
+                self.route_select_cursor += 1;
+            }
+        }
+    }
+
+    pub fn confirm_route_select(&mut self) {
+        if let Some(hop) = self.selected_hop() {
+            let ttl = hop.ttl();
+            let addr_count = hop.addr_count();
+            if addr_count == 0 { self.show_route_select = false; return; }
+            let selected = self.route_select_cursor.min(addr_count - 1);
+            if self.route_selections.get(&ttl) == Some(&selected) {
+                // 取消选择此跳
+                self.route_selections.remove(&ttl);
+            } else {
+                self.route_selections.insert(ttl, selected);
+            }
+            // 选中后：把此跳之后所有地址标记为隐藏，等待后台验证
+            self.hide_post_selection_addrs(ttl);
+        }
+        self.show_route_select = false;
+        self.start_verify_routes();
+    }
+
+    pub fn clear_all_route_selections(&mut self) {
+        self.route_selections.clear();
+        self.hidden_addrs.clear();
+    }
+
+    /// 选中某跳后，把此跳之后到目的之前的所有地址标记为隐藏
+    fn hide_post_selection_addrs(&mut self, selected_ttl: u8) {
+        self.hidden_addrs.clear();
+        let hops: Vec<(u8, usize)> = self.tracer_data()
+            .hops_for_flow(self.selected_flow)
+            .iter()
+            .map(|h| (h.ttl(), h.addr_count()))
+            .collect();
+        let max_ttl = hops.iter().map(|&(t, _)| t).max().unwrap_or(0);
+        for (ttl, addr_count) in hops {
+            if ttl <= selected_ttl || ttl == max_ttl { continue; }
+            for addr_idx in 0..addr_count {
+                self.hidden_addrs.insert((ttl, addr_idx));
+            }
+        }
+    }
+
+    /// 启动后台验证线程
+    pub fn start_verify_routes(&mut self) {
+        if self.verifying_routes { return; }
+        if self.route_selections.is_empty() || self.hidden_addrs.is_empty() {
+            return;
+        }
+
+        // 先收集所有需要的数据（owned），再修改 self
+        let hops_owned: Vec<(u8, usize, Vec<(usize, usize)>)> = {
+            let hops = self.tracer_data().hops_for_flow(self.selected_flow);
+            hops.iter().map(|h| {
+                let addrs: Vec<(usize, usize)> = h.addrs_with_counts()
+                    .enumerate()
+                    .map(|(i, (_, &c))| (i, c))
+                    .collect();
+                (h.ttl(), h.addr_count(), addrs)
+            }).collect()
+        };
+        let sels = self.route_selections.clone();
+        let hidden = self.hidden_addrs.clone();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let result = crate::route_verify::verify_from_data(&hops_owned, &sels, &hidden);
+            let _ = tx.send(result);
+        });
+
+        self.verifying_routes = true;
+        self.verify_result_rx = Some(rx);
+    }
+
+    /// 非阻塞接收验证结果，将验证通过的地址从隐藏集合移除
+    pub fn try_recv_verify_result(&mut self) {
+        if let Some(rx) = &self.verify_result_rx {
+            match rx.try_recv() {
+                Ok(verified) => {
+                    for (ttl, addr_idx) in verified {
+                        self.hidden_addrs.remove(&(ttl, addr_idx));
+                    }
+                    self.verifying_routes = false;
+                    self.verify_result_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.verifying_routes = false;
+                    self.verify_result_rx = None;
+                }
+            }
+        }
+    }
+
+    /// 地址是否可见（不在隐藏集合中）
+    pub fn is_addr_visible(&self, ttl: u8, addr_idx: usize) -> bool {
+        !self.hidden_addrs.contains(&(ttl, addr_idx))
+    }
+
+    /// 获取某个 hop 的选中地址索引
+    #[allow(dead_code)]
+    pub fn route_selected_addr(&self, ttl: u8) -> Option<usize> {
+        self.route_selections.get(&ttl).copied()
     }
 
     pub fn show_settings_columns(&mut self, column_index: usize) {

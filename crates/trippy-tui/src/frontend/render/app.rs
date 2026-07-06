@@ -1,4 +1,4 @@
-use crate::frontend::render::{bar, body, flows, footer, header, help, settings, tabs};
+use crate::frontend::render::{bar, body, flows, footer, header, help, route_select, settings, tabs};
 use crate::frontend::tui_app::TuiApp;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
@@ -69,6 +69,8 @@ pub fn render(f: &mut Frame<'_>, app: &mut TuiApp) {
         settings::render(f, app);
     } else if app.show_help {
         help::render(f, app);
+    } else if app.show_route_select {
+        route_select::render(f, app);
     }
 }
 
