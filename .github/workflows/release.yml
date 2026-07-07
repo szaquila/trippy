@@ -108,11 +108,11 @@ jobs:
           VERSION="${{ needs.create-release.outputs.trip_version }}"
 
           if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            BINARY_NAME="trippy.exe"
+            BINARY_NAME="trip.exe"
             ARCHIVE_NAME="trippy-${VERSION}-${{ matrix.target }}.zip"
             7z a -tzip "dist/$ARCHIVE_NAME" "$TARGET_DIR/release/$BINARY_NAME"
           else
-            BINARY_NAME="trippy"
+            BINARY_NAME="trip"
             ARCHIVE_NAME="trippy-${VERSION}-${{ matrix.target }}.tar.gz"
             tar czf "dist/$ARCHIVE_NAME" -C "$TARGET_DIR/release" "$BINARY_NAME"
           fi
