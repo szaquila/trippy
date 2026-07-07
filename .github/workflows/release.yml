@@ -117,21 +117,6 @@ jobs:
             tar czf "dist/$ARCHIVE_NAME" -C "$TARGET_DIR/release" "$BINARY_NAME"
           fi
 
-      - name: Create Packages (RPM/Deb)
-        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
-        shell: bash
-        run: |
-          VERSION="${{ needs.create-release.outputs.trip_version }}"
-          RPM_VERSION="${VERSION//-/_}"
-
-          # Build RPM
-          cargo install cargo-generate-rpm
-          cargo generate-rpm -p crates/trippy --target ${{ matrix.target }} -o "dist/trippy-${RPM_VERSION}-x86_64.rpm"
-
-          # Build Deb
-          cargo install cargo-deb
-          cargo deb -p trippy --target ${{ matrix.target }} --output "dist/trippy_${VERSION}_amd64.deb"
-
       # 最终统一上传 dist 目录下的所有文件
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
