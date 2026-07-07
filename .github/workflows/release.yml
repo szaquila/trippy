@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
+      # 匹配如 1.0.0, 1.0.0-dev, 2.0.0-alpha 等标签
+      - '[0-9]+.[0-9]+.[0-9]+*'
 
 permissions:
   contents: write
@@ -33,6 +34,7 @@ jobs:
       CARGO_TERM_VERBOSE: true
       RUST_BACKTRACE: 1
     strategy:
+      fail-fast: false # 即使某个平台失败，也让其他平台继续跑，方便排查问题
       matrix:
         include:
           # Linux Targets
@@ -86,13 +88,18 @@ jobs:
 
       - name: Configure for Windows (Native)
         if: ${{ matrix.os == 'windows-2022' }}
+        shell: bash
         run: |
           echo "CARGO=cargo" >> $GITHUB_ENV
           echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
           echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
 
+      # 【核心修复】强制使用 bash，并加上引号，彻底解决 Windows PowerShell 报错
       - name: Build release binary
-        run: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
+        shell: bash
+        run: |
+          echo "Running: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}"
+          "${{ env.CARGO }}" build --verbose --release ${{ env.TARGET_FLAGS }}
 
       - name: Package artifact
         shell: bash
@@ -132,5 +139,6 @@ jobs:
         with:
           files: dist/*
           draft: false
-          prerelease: false
+          # 【预发布支持】如果 Tag 包含 -dev, -alpha, -beta，自动标记为预发布
+          prerelease: ${{ contains(github.ref_name, '-dev') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
           fail_on_unmatched_files: false
