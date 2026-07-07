@@ -26,54 +26,39 @@ jobs:
           echo "version is: ${{ env.TRIP_VERSION }}"
 
   build-release:
-    name: Build Release Assets
+    name: Build ${{ matrix.target }}
     needs: create-release
     runs-on: ${{ matrix.os }}
     env:
-      CARGO: cargo
-      TARGET_FLAGS: ''
-      TARGET_DIR: ./target
-      CROSS_NO_WARNINGS: 0
+      CARGO_TERM_VERBOSE: true
       RUST_BACKTRACE: 1
     strategy:
       matrix:
-        build:
-          [
-            x86_64-linux-gnu,
-            x86_64-linux-musl,
-            aarch64-linux-gnu,
-            aarch64-linux-musl,
-            armv7-linux-gnueabihf,
-            armv7-linux-musleabihf,
-            armv7-linux-musleabi,
-            x86_64-pc-windows-msvc,
-            x86_64-pc-windows-gnu,
-            aarch64-pc-windows-msvc,
-          ]
         include:
-          # Linux (x86_64 & aarch64)
-          - build: x86_64-linux-gnu
+          # Linux Targets
+          - target: x86_64-unknown-linux-gnu
             os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - build: x86_64-linux-musl
+            build_type: native
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-          - build: aarch64-linux-gnu
+            build_type: native
+          - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04
-            target: aarch64-unknown-linux-gnu
-          - build: aarch64-linux-musl
+            build_type: cross
+          - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04
-            target: aarch64-unknown-linux-musl
-          # Windows
-          - build: x86_64-pc-windows-msvc
+            build_type: cross
+          - target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-24.04
+            build_type: cross
+
+          # Windows Targets
+          - target: x86_64-pc-windows-msvc
             os: windows-2022
-            target: x86_64-pc-windows-msvc
-          - build: x86_64-pc-windows-gnu
-            os: ubuntu-24.04
-            target: x86_64-pc-windows-gnu
-          - build: aarch64-pc-windows-msvc
+            build_type: native
+          - target: aarch64-pc-windows-msvc
             os: windows-2022
-            target: aarch64-pc-windows-msvc
+            build_type: native
 
     steps:
       - name: Checkout repository
@@ -81,20 +66,17 @@ jobs:
         with:
           fetch-depth: 1
 
-      # 【优化1】使用 dtolnay/rust-toolchain 替代过时的 actions-rs
-      # 它会自动读取项目根目录的 rust-toolchain.toml，如果没有则使用 stable
       - name: Install Rust
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
 
-      # 【优化2】使用 rust-cache 加速构建
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      # 【优化3】增加 --locked 参数防止依赖突变
-      - name: Use Cross
+      - name: Install cross (Linux only)
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
         shell: bash
         run: |
           cargo install cross --git https://github.com/cross-rs/cross --locked
@@ -102,62 +84,53 @@ jobs:
           echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
           echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
 
-      - name: Show command used for Cargo
+      - name: Configure for Windows (Native)
+        if: ${{ matrix.os == 'windows-2022' }}
         run: |
-          echo "cargo command is: ${{ env.CARGO }}"
-          echo "target flag is: ${{ env.TARGET_FLAGS }}"
-          echo "target dir is: ${{ env.TARGET_DIR }}"
+          echo "CARGO=cargo" >> $GITHUB_ENV
+          echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
+          echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
 
       - name: Build release binary
         run: ${{ env.CARGO }} build --verbose --release ${{ env.TARGET_FLAGS }}
 
-      - name: Build archive
+      - name: Package artifact
         shell: bash
         run: |
-          staging="trippy-${{ needs.create-release.outputs.trip_version }}-${{ matrix.target }}"
-          mkdir -p "$staging"
-          if [ "${{ matrix.os }}" = "windows-2022" ] || [ "${{ matrix.build }}" = "x86_64-pc-windows-gnu" ]; then
-            cp "target/${{ matrix.target }}/release/trip.exe" "$staging/"
-            7z a -tzip "$staging.zip" "$staging"
-            echo "ASSET=$staging.zip" >> $GITHUB_ENV
+          mkdir -p dist
+          VERSION="${{ needs.create-release.outputs.trip_version }}"
+
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            BINARY_NAME="trippy.exe"
+            ARCHIVE_NAME="trippy-${VERSION}-${{ matrix.target }}.zip"
+            7z a -tzip "dist/$ARCHIVE_NAME" "$TARGET_DIR/release/$BINARY_NAME"
           else
-            cp "target/${{ matrix.target }}/release/trip" "$staging/"
-            tar czf "$staging.tar.gz" "$staging"
-            echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+            BINARY_NAME="trippy"
+            ARCHIVE_NAME="trippy-${VERSION}-${{ matrix.target }}.tar.gz"
+            tar czf "dist/$ARCHIVE_NAME" -C "$TARGET_DIR/release" "$BINARY_NAME"
           fi
 
-      - name: Build RPM package
+      - name: Create Packages (RPM/Deb)
+        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' }}
         shell: bash
-        if: startsWith(matrix.build, 'x86_64-linux-gnu')
         run: |
+          VERSION="${{ needs.create-release.outputs.trip_version }}"
+
+          # Build RPM
           cargo install cargo-generate-rpm
-          cargo generate-rpm -p crates/trippy --target ${{ matrix.target }} -o target/${{ matrix.target }}/generate-rpm/trippy-${{ needs.create-release.outputs.trip_version }}-x86_64.rpm
+          cargo generate-rpm -p crates/trippy --target ${{ matrix.target }} -o "dist/trippy-${VERSION}-x86_64.rpm"
 
-      - name: Create Debian package
-        shell: bash
-        if: startsWith(matrix.build, 'x86_64-linux-gnu') || startsWith(matrix.build, 'x86_64-linux-musl')
-        run: |
+          # Build Deb
           cargo install cargo-deb
-          cargo deb -p trippy --target ${{ matrix.target }} --deb-version ${{ needs.create-release.outputs.trip_version }}
-          case ${{ matrix.target }} in
-            aarch64-*-linux-*) DPKG_ARCH=arm64 ;;
-            arm-*-linux-*hf) DPKG_ARCH=armhf ;;
-            i686-*-linux-*) DPKG_ARCH=i686 ;;
-            x86_64-*-linux-*) DPKG_ARCH=amd64 ;;
-            *) DPKG_ARCH=notset ;;
-          esac;
-          echo "DPKG_ARCH=${DPKG_ARCH}" >> $GITHUB_ENV
+          cargo deb -p trippy --target ${{ matrix.target }} --output "dist/trippy_${VERSION}_amd64.deb"
 
-      # 【优化4】使用 softprops/action-gh-release 统一处理所有资产上传
-      # 这个 Action 会自动处理 Release 的创建和文件上传，无需手动获取 upload_url
+      # 最终统一上传 dist 目录下的所有文件
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: |
-            ${{ env.ASSET }}
-            target/${{ matrix.target }}/generate-rpm/trippy-${{ needs.create-release.outputs.trip_version }}-x86_64.rpm
-            target/${{ matrix.target }}/debian/trippy_${{ needs.create-release.outputs.trip_version }}_${{ env.DPKG_ARCH }}.deb
+          files: dist/*
           draft: false
           prerelease: false
+          fail_on_unmatched_files: false
