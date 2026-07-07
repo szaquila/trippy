@@ -122,10 +122,11 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ needs.create-release.outputs.trip_version }}"
+          RPM_VERSION="${VERSION//-/_}"
 
           # Build RPM
           cargo install cargo-generate-rpm
-          cargo generate-rpm -p crates/trippy --target ${{ matrix.target }} -o "dist/trippy-${VERSION}-x86_64.rpm"
+          cargo generate-rpm -p crates/trippy --target ${{ matrix.target }} -o "dist/trippy-${RPM_VERSION}-x86_64.rpm"
 
           # Build Deb
           cargo install cargo-deb
