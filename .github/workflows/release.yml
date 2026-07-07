@@ -46,13 +46,9 @@ jobs:
             armv7-linux-gnueabihf,
             armv7-linux-musleabihf,
             armv7-linux-musleabi,
-            x86_64-apple-darwin,
-            aarch64-apple-darwin,
             x86_64-pc-windows-msvc,
             x86_64-pc-windows-gnu,
             aarch64-pc-windows-msvc,
-            x86_64-netbsd,
-            x86_64-freebsd,
           ]
         include:
           # Linux (x86_64 & aarch64)
@@ -68,23 +64,6 @@ jobs:
           - build: aarch64-linux-musl
             os: ubuntu-24.04
             target: aarch64-unknown-linux-musl
-          # Linux (armv7)
-          - build: armv7-linux-gnueabihf
-            os: ubuntu-24.04
-            target: armv7-unknown-linux-gnueabihf
-          - build: armv7-linux-musleabihf
-            os: ubuntu-24.04
-            target: armv7-unknown-linux-musleabihf
-          - build: armv7-linux-musleabi
-            os: ubuntu-24.04
-            target: armv7-unknown-linux-musleabi
-          # macOS
-          - build: x86_64-apple-darwin
-            os: macos-latest
-            target: x86_64-apple-darwin
-          - build: aarch64-apple-darwin
-            os: macos-latest
-            target: aarch64-apple-darwin
           # Windows
           - build: x86_64-pc-windows-msvc
             os: windows-2022
@@ -95,13 +74,6 @@ jobs:
           - build: aarch64-pc-windows-msvc
             os: windows-2022
             target: aarch64-pc-windows-msvc
-          # BSD
-          - build: x86_64-netbsd
-            os: ubuntu-24.04
-            target: x86_64-unknown-netbsd
-          - build: x86_64-freebsd
-            os: ubuntu-24.04
-            target: x86_64-unknown-freebsd
 
     steps:
       - name: Checkout repository
